@@ -1,0 +1,5 @@
+{
+  "name": "Structura AI - Intelligent Document Extraction",
+  "description": "Enterprise-grade unstructured document processing pipeline. Features auto-classification, human-in-the-loop validation, and adaptive rule inference using Gemini models.",
+  "requestFramePermissions": []
+}
