@@ -108,6 +108,54 @@ export const optimizeSkillDescription = async (userInput: string, exampleText?: 
   }
 };
 
+// --- AI Rule Generation ---
+export const generateRuleStructure = async (
+    userDescription: string
+): Promise<{ systemInstruction: string; skills: any[]; schema: string }> => {
+    const ai = getAiClient();
+    
+    const prompt = `
+      你是一个不良资产文档处理系统的架构师。
+      
+      用户需求：
+      "${userDescription}"
+      
+      任务：
+      基于用户的需求（可能是一个字段列表，或者一段描述），生成一个完整的提取规则配置。
+      包含以下三个部分：
+      1. systemInstruction: 系统提示词，指导AI如何处理此类文档。
+      2. skills: 一个技能数组，每个技能包含 { name, category, description, outputExample }。Category 只能是: 'Date' | 'Amount' | 'Entity' | 'Text' | 'Boolean' | 'Other'。
+      3. schema: 对应的 JSON Schema 字符串。
+
+      请返回纯 JSON 格式：
+      {
+        "systemInstruction": "...",
+        "skills": [ ... ],
+        "schema": { ... } // 直接返回对象，不要 stringify
+      }
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+
+        const result = JSON.parse(response.text || '{}');
+        
+        return {
+            systemInstruction: result.systemInstruction || '',
+            skills: result.skills || [],
+            schema: JSON.stringify(result.schema || {}, null, 2)
+        };
+    } catch (e) {
+        console.error("Rule generation error", e);
+        throw e;
+    }
+};
+
+
 // Extraction
 export const extractDataWithRule = async (
   documentText: string, 

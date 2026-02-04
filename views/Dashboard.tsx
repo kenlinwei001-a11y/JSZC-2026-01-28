@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, Settings, Server, Cpu, Folder, Users, ArrowRight, PieChart, MoreHorizontal, Plus, Briefcase, ChevronRight, Calendar, TrendingUp, Search, Sparkles } from 'lucide-react';
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, Settings, Server, Cpu, Folder, Users, ArrowRight, PieChart, MoreHorizontal, Plus, Briefcase, ChevronRight, Calendar, TrendingUp, Search, Sparkles, Check, ChevronDown } from 'lucide-react';
 import { DocumentFile, ProcessingStatus, DocType, AIModel, MCPTool, StatusCN, DocTypeCN, Project, User, ComparableTransaction } from '../types';
 
 interface DashboardProps {
@@ -18,6 +18,7 @@ interface DashboardProps {
   onSelectProject: (projectId: string | null) => void;
   onManageRules: () => void;
   onOpenSettings: () => void;
+  onUpdateDocument: (doc: DocumentFile) => void;
 }
 
 // MOCK DATA FOR ANALYSIS
@@ -42,11 +43,15 @@ const Dashboard: React.FC<DashboardProps> = ({
     onSelectDoc, 
     onSelectProject,
     onManageRules,
-    onOpenSettings 
+    onOpenSettings,
+    onUpdateDocument
 }) => {
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   
+  // Staging for manual classification changes before confirmation
+  const [stagingTypes, setStagingTypes] = useState<Record<string, DocType>>({});
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
@@ -67,8 +72,55 @@ const Dashboard: React.FC<DashboardProps> = ({
     }, 1500);
   };
 
+  const handleStageTypeChange = (docId: string, newType: DocType) => {
+    setStagingTypes(prev => ({...prev, [docId]: newType}));
+  };
+
+  const handleConfirmType = (e: React.MouseEvent, doc: DocumentFile) => {
+      e.stopPropagation();
+      const newType = stagingTypes[doc.id];
+      if (newType && newType !== doc.type) {
+          onUpdateDocument({ ...doc, type: newType });
+          // Clear staging
+          const nextStaging = { ...stagingTypes };
+          delete nextStaging[doc.id];
+          setStagingTypes(nextStaging);
+      }
+  };
+
+  // Helper for progress bar
+  const getProgressStyle = (status: ProcessingStatus) => {
+    switch (status) {
+      case ProcessingStatus.UPLOADED: 
+        return { percent: 10, color: 'bg-slate-300', animate: false };
+      case ProcessingStatus.CLASSIFYING: 
+        return { percent: 30, color: 'bg-blue-400', animate: true };
+      case ProcessingStatus.READY_TO_EXTRACT: 
+        return { percent: 5, color: 'bg-slate-200', animate: false };
+      case ProcessingStatus.EXTRACTING: 
+        return { percent: 60, color: 'bg-brand-500', animate: true };
+      case ProcessingStatus.REVIEW: 
+        return { percent: 90, color: 'bg-amber-500', animate: false };
+      case ProcessingStatus.COMPLETED: 
+        return { percent: 100, color: 'bg-green-500', animate: false };
+      default: 
+        return { percent: 0, color: 'bg-slate-200', animate: false };
+    }
+  };
+
   // Helper to get user details
   const getUser = (id: string) => users.find(u => u.id === id);
+
+  // Grouping Logic
+  const projectDocs = documents.filter(d => d.projectId === currentProject?.id);
+  const unclassifiedDocs = projectDocs.filter(d => d.type === DocType.UNKNOWN);
+  const classifiedGroups = Object.values(DocType)
+    .filter(t => t !== DocType.UNKNOWN)
+    .map(type => ({
+        type,
+        docs: projectDocs.filter(d => d.type === type)
+    }))
+    .filter(g => g.docs.length > 0);
 
   // --- VIEW 1: PROJECT LIST (Main Dashboard) ---
   if (!currentProject) {
@@ -160,7 +212,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   }
 
   // --- VIEW 2: PROJECT DETAIL (File Dashboard) ---
-  const projectDocs = documents.filter(d => d.projectId === currentProject.id);
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -232,7 +283,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       {showAnalysis && (
         <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="bg-gradient-to-r from-purple-50 to-white rounded-xl border border-purple-100 p-6 shadow-sm">
-                <div className="flex justify-between items-center mb-4">
+                {/* ... Analysis Content same as before ... */}
+                 <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-slate-800 flex items-center">
                         <Sparkles className="w-5 h-5 text-purple-600 mr-2" />
                         历史相似案例匹配 (Comparable Transactions)
@@ -364,109 +416,209 @@ const Dashboard: React.FC<DashboardProps> = ({
             id="fileInput" 
             type="file" 
             multiple 
+            // @ts-ignore
+            webkitdirectory=""
             className="hidden" 
             onChange={(e) => e.target.files && onUpload(e.target.files)}
             />
             <div className="w-16 h-16 bg-brand-50 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
             <UploadCloud className="w-8 h-8" />
             </div>
-            <h3 className="text-lg font-medium text-slate-800">上传项目相关文件</h3>
-            <p className="text-slate-400 text-sm mt-1">合同、判决书、评估报告 (PDF, Word, Images)</p>
+            <h3 className="text-lg font-medium text-slate-800">上传项目相关文件 / 文件夹</h3>
+            <p className="text-slate-400 text-sm mt-1">支持拖拽或选择文件夹。自动识别合同、判决书、评估报告等不良资产文件。</p>
         </div>
       </div>
 
-      {/* File List */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <div className="flex items-center space-x-2">
-              <Folder className="w-4 h-4 text-slate-400" />
-              <h3 className="font-semibold text-slate-800 text-sm">项目文档列表</h3>
-          </div>
-          <div className="flex items-center space-x-3">
-             <span className="text-xs text-slate-400">显示: 全部</span>
-          </div>
-        </div>
+      {/* Classification List View */}
+      <div className="space-y-6">
         
-        {projectDocs.length === 0 ? (
-          <div className="p-16 text-center text-slate-400 flex flex-col items-center">
-             <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3">
-                <FileText className="w-6 h-6 text-slate-300" />
+        {/* SECTION 1: Unclassified Documents */}
+        {unclassifiedDocs.length > 0 && (
+             <div className="bg-white rounded-xl shadow-sm border border-red-200 overflow-hidden">
+                 <div className="px-6 py-4 border-b border-red-100 flex justify-between items-center bg-red-50">
+                    <div className="flex items-center space-x-2 text-red-700">
+                        <AlertCircle className="w-5 h-5" />
+                        <h3 className="font-bold text-sm">待分类/未知类型文档 ({unclassifiedDocs.length})</h3>
+                    </div>
+                    <span className="text-xs text-red-500">请人工调整分类并确认</span>
+                </div>
+                <div className="p-0">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-50 text-slate-500 font-medium text-xs uppercase">
+                            <tr>
+                                <th className="px-6 py-3">文件名</th>
+                                <th className="px-6 py-3">AI 建议类型</th>
+                                <th className="px-6 py-3">调整分类</th>
+                                <th className="px-6 py-3 text-right">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {unclassifiedDocs.map(doc => (
+                                <tr key={doc.id} className="hover:bg-slate-50 transition-colors">
+                                    <td className="px-6 py-4 font-medium text-slate-700">{doc.name}</td>
+                                    <td className="px-6 py-4">
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500">
+                                            未知 / Unknown
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <div className="relative w-64">
+                                            <select
+                                                value={stagingTypes[doc.id] || ''}
+                                                onChange={(e) => handleStageTypeChange(doc.id, e.target.value as DocType)}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="w-full pl-3 pr-8 py-1.5 bg-white border border-slate-300 rounded text-sm focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none appearance-none cursor-pointer hover:border-brand-300"
+                                            >
+                                                <option value="" disabled>选择文档类型...</option>
+                                                {Object.values(DocType)
+                                                    .filter(t => t !== DocType.UNKNOWN)
+                                                    .map(type => (
+                                                        <option key={type} value={type}>{DocTypeCN[type]}</option>
+                                                    ))
+                                                }
+                                            </select>
+                                            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"/>
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 text-right">
+                                        <button 
+                                            onClick={(e) => handleConfirmType(e, doc)}
+                                            disabled={!stagingTypes[doc.id]}
+                                            className="inline-flex items-center space-x-1 px-3 py-1.5 rounded bg-brand-600 text-white hover:bg-brand-700 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed transition-colors text-xs font-medium"
+                                        >
+                                            <Check className="w-3 h-3" />
+                                            <span>确认分类</span>
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
              </div>
-            <span>该项目暂无文档，请上传开始工作。</span>
-          </div>
-        ) : (
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 text-slate-500 font-medium text-xs uppercase tracking-wider">
-              <tr>
-                <th className="px-6 py-3 font-semibold">文件名</th>
-                <th className="px-6 py-3 font-semibold">识别类型</th>
-                <th className="px-6 py-3 font-semibold">状态</th>
-                <th className="px-6 py-3 font-semibold">上传人</th>
-                <th className="px-6 py-3 font-semibold">上传日期</th>
-                <th className="px-6 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {projectDocs.map((doc) => {
-                const uploader = getUser(doc.uploaderId);
-                return (
-                    <tr 
-                    key={doc.id} 
-                    onClick={() => onSelectDoc(doc.id)}
-                    className="hover:bg-slate-50 cursor-pointer transition-colors group"
-                    >
-                    <td className="px-6 py-4">
-                        <div className="flex items-center space-x-3">
-                        <div className="p-2 bg-slate-100 rounded text-slate-500 group-hover:bg-white group-hover:shadow-sm transition-all">
-                            <FileText className="w-5 h-5" />
-                        </div>
-                        <span className="font-medium text-slate-700 group-hover:text-brand-600 transition-colors">{doc.name}</span>
-                        </div>
-                    </td>
-                    <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded text-xs font-medium border
-                        ${doc.type === DocType.UNKNOWN ? 'bg-gray-50 text-gray-600 border-gray-200' : 'bg-blue-50 text-blue-700 border-blue-100'}
-                        `}>
-                        {DocTypeCN[doc.type] || doc.type}
-                        </span>
-                    </td>
-                    <td className="px-6 py-4">
-                        <div className="flex items-center">
-                        {doc.status === ProcessingStatus.CLASSIFYING && <Loader2 className="w-4 h-4 mr-2 animate-spin text-brand-500" />}
-                        {doc.status === ProcessingStatus.COMPLETED && <CheckCircle2 className="w-4 h-4 mr-2 text-green-500" />}
-                        {doc.status === ProcessingStatus.REVIEW && <AlertCircle className="w-4 h-4 mr-2 text-amber-500" />}
-                        <span className={`text-xs font-medium ${
-                            doc.status === ProcessingStatus.REVIEW ? 'text-amber-600' : 
-                            doc.status === ProcessingStatus.COMPLETED ? 'text-green-700' : 'text-slate-600'
-                        }`}>
-                            {StatusCN[doc.status] || doc.status}
-                        </span>
-                        </div>
-                    </td>
-                    <td className="px-6 py-4">
-                        {uploader && (
-                             <div className="flex items-center space-x-2">
-                                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] text-white font-medium ${uploader.color}`}>
-                                    {uploader.avatarInitial}
-                                </div>
-                                <span className="text-slate-500 text-xs">{uploader.name}</span>
-                             </div>
-                        )}
-                    </td>
-                    <td className="px-6 py-4 text-slate-400 font-mono text-xs">
-                        {new Date(doc.uploadDate).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                        <button className="text-slate-300 hover:text-brand-600">
-                            <MoreHorizontal className="w-4 h-4" />
-                        </button>
-                    </td>
-                    </tr>
-                );
-              })}
-            </tbody>
-          </table>
         )}
+
+        {/* SECTION 2: Classified Groups */}
+        {classifiedGroups.length > 0 && (
+            <div className="space-y-4">
+                <div className="flex items-center space-x-2 text-slate-500 px-1">
+                    <Folder className="w-4 h-4" />
+                    <h3 className="font-semibold text-sm">已分类文档清单</h3>
+                </div>
+                
+                {classifiedGroups.map(group => (
+                    <div key={group.type} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                            <span className="font-bold text-sm text-slate-700 flex items-center">
+                                {DocTypeCN[group.type]}
+                                <span className="ml-2 bg-white border border-slate-200 text-slate-500 text-[10px] px-2 py-0.5 rounded-full">
+                                    {group.docs.length}
+                                </span>
+                            </span>
+                        </div>
+                        <table className="w-full text-left text-sm">
+                             <thead className="bg-white text-slate-400 font-medium text-[10px] uppercase border-b border-slate-100">
+                                <tr>
+                                    <th className="px-6 py-2 w-[30%]">文件名</th>
+                                    <th className="px-6 py-2 w-[30%]">抽取进度 / 状态</th>
+                                    <th className="px-6 py-2 w-[20%]">上传人</th>
+                                    <th className="px-6 py-2 w-[20%] text-right">分类调整</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                                {group.docs.map(doc => {
+                                    const uploader = getUser(doc.uploaderId);
+                                    return (
+                                        <tr key={doc.id} onClick={() => onSelectDoc(doc.id)} className="hover:bg-slate-50 cursor-pointer transition-colors group">
+                                            <td className="px-6 py-3">
+                                                 <div className="flex items-center space-x-3">
+                                                    <div className="p-1.5 bg-blue-50 text-blue-600 rounded">
+                                                        <FileText className="w-4 h-4" />
+                                                    </div>
+                                                    <span className="font-medium text-slate-700 group-hover:text-brand-600">{doc.name}</span>
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-3">
+                                                {(() => {
+                                                    const { percent, color, animate } = getProgressStyle(doc.status);
+                                                    return (
+                                                        <div className="w-full max-w-[160px]" onClick={(e) => { e.stopPropagation(); onSelectDoc(doc.id); }}>
+                                                            <div className="flex justify-between items-center mb-1.5">
+                                                                <div className="flex items-center text-[10px]">
+                                                                    {doc.status === ProcessingStatus.CLASSIFYING && <Loader2 className="w-3 h-3 mr-1 animate-spin text-blue-500" />}
+                                                                    {doc.status === ProcessingStatus.EXTRACTING && <Loader2 className="w-3 h-3 mr-1 animate-spin text-brand-500" />}
+                                                                    {doc.status === ProcessingStatus.REVIEW && <AlertCircle className="w-3 h-3 mr-1 text-amber-500" />}
+                                                                    {doc.status === ProcessingStatus.COMPLETED && <CheckCircle2 className="w-3 h-3 mr-1 text-green-500" />}
+                                                                    <span className={`font-medium ${
+                                                                        doc.status === ProcessingStatus.REVIEW ? 'text-amber-600' : 
+                                                                        doc.status === ProcessingStatus.COMPLETED ? 'text-green-600' : 
+                                                                        doc.status === ProcessingStatus.EXTRACTING ? 'text-brand-600' : 'text-slate-500'
+                                                                    }`}>
+                                                                        {StatusCN[doc.status]}
+                                                                    </span>
+                                                                </div>
+                                                                <span className="text-[10px] text-slate-400 font-mono">{percent}%</span>
+                                                            </div>
+                                                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden relative group-hover:ring-1 group-hover:ring-slate-200 transition-all">
+                                                                <div 
+                                                                    className={`h-full rounded-full transition-all duration-700 ease-out ${color} ${animate ? 'animate-pulse' : ''}`}
+                                                                    style={{ width: `${percent}%` }}
+                                                                ></div>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })()}
+                                            </td>
+                                            <td className="px-6 py-3">
+                                                {uploader && (
+                                                    <div className="flex items-center space-x-2">
+                                                        <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] text-white font-medium ${uploader.color}`}>
+                                                            {uploader.avatarInitial}
+                                                        </div>
+                                                        <span className="text-slate-400 text-xs">{uploader.name}</span>
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-6 py-3 text-right">
+                                                <div className="inline-block relative w-32" onClick={(e) => e.stopPropagation()}>
+                                                    <select
+                                                        value={doc.type}
+                                                        onChange={(e) => {
+                                                            const newType = e.target.value as DocType;
+                                                            if (newType !== doc.type) {
+                                                                onUpdateDocument({ ...doc, type: newType });
+                                                            }
+                                                        }}
+                                                        className="w-full pl-2 pr-6 py-1 bg-transparent hover:bg-slate-100 border border-transparent hover:border-slate-200 rounded text-xs text-slate-500 focus:ring-0 outline-none appearance-none cursor-pointer"
+                                                    >
+                                                        {Object.values(DocType)
+                                                            .filter(t => t !== DocType.UNKNOWN)
+                                                            .map(type => (
+                                                                <option key={type} value={type}>{DocTypeCN[type]}</option>
+                                                            ))
+                                                        }
+                                                    </select>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                ))}
+            </div>
+        )}
+        
+        {projectDocs.length === 0 && (
+             <div className="p-16 text-center text-slate-400 flex flex-col items-center border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mb-3 shadow-sm">
+                   <Folder className="w-6 h-6 text-slate-300" />
+                </div>
+               <span>该项目暂无文档，请上传开始工作。</span>
+             </div>
+        )}
+
       </div>
     </div>
   );

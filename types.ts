@@ -4,6 +4,7 @@ export enum DocType {
   COURT_RULING = 'Court Ruling',
   ASSET_EVALUATION = 'Asset Evaluation',
   TRANSFER_AGREEMENT = 'Transfer Agreement',
+  OTHER = 'Other',
   UNKNOWN = 'Unknown'
 }
 
@@ -13,7 +14,8 @@ export const DocTypeCN: Record<DocType, string> = {
   [DocType.COURT_RULING]: '法院判决/裁定书',
   [DocType.ASSET_EVALUATION]: '资产评估报告',
   [DocType.TRANSFER_AGREEMENT]: '债权转让协议',
-  [DocType.UNKNOWN]: '未知类型'
+  [DocType.OTHER]: '其他文件',
+  [DocType.UNKNOWN]: '待分类/未知'
 };
 
 export enum ProcessingStatus {
@@ -71,6 +73,10 @@ export interface ExtractionRule {
   skills: ExtractionSkill[]; // Specific modular rules
   schema: string; // JSON string representation of expected schema
   version: number;
+  isActive: boolean; // New
+  creatorName: string; // New
+  creationMethod: 'Preset' | 'Manual' | 'AI_Generated'; // New
+  lastRunDate?: string; // New
 }
 
 export interface AIModel {
